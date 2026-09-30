@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📍 متتبع موقعي</title>
+
+    <!-- مكتبة Leaflet للخريطة -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+        body { display: flex; flex-direction: column; height: 100vh; background: #1a1a2e; }
+
+        #map { flex: 1; }
+
+        .panel {
+            background: #16213e;
+            color: white;
+            padding: 15px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+            border-top: 2px solid #0f3460;
+        }
+
+        .panel button {
+            background: #0f3460;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: 0.2s;
+        }
+
+        .panel button:hover { background: #e94560; }
+        .panel button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .status {
+            padding: 8px 15px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 13px;
+        }
+
+        .status.online { background: #16a34a; }
+        .status.offline { background: #dc2626; }
+        .status.waiting { background: #ca8a04; }
+
+        #info {
+            background: #0f3460;
+            padding: 8px 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: monospace;
+        }
+
+        .header {
+            background: #16213e;
+            color: white;
+            padding: 12px 20px;
+            border-bottom: 2px solid #0f3460;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 { font-size: 18px; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>📍 متتبع موقعي</h1>
+    <span id="counter" style="font-size:13px; opacity:0.7;">سجلات: 0</span>
+</div>
+
+<div id="map"></div>
+
+<div class="panel">
+    <button id="startBtn">▶️ بدء الإرسال</button>
+    <button id="stopBtn" disabled>⏹️ إيقاف</button>
+    <button id="centerBtn">🎯 موقعي</button>
+
+    <span id="status" class="status offline">⚫ متوقف</span>
+    <span id="info">في الانتظار...</span>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// 1️⃣ إعدادات Back4App — استبدل هذه القيم!
+// ═══════════════════════════════════════════════════════
+const APP_ID    = "O6raaZTs7mijebvMLgF3iLisXJlV2sDaFarukCTt";
+const REST_KEY  = "YCwT4Z5H7oNvZhWUAh222gCIbLyY1krffJX3t9m6";
+const SERVER    = "https://parseapi.back4app.com";
+
+const HEADERS = {
+    "X-Parse-Application-Id": APP_ID,
+    "X-Parse-REST-API-Key": REST_KEY,
+    "Content-Type": "application/json"
+};
+
+// ═══════════════════════════════════════════════════════
+// 2️⃣ معرف الجهاز (يُحفظ في المتصفح)
+// ═══════════════════════════════════════════════════════
+function getDeviceId() {
+    let id = localStorage.getItem("device_id");
+    if (!id) {
+        id = "web_" + Math.random().toString(36).substring(2, 10);
+        localStorage.setItem("device_id", id);
+    }
+    return id;
+}
+const DEVICE_ID = getDeviceId();
+const DEVICE_NAME = navigator.platform || "متصفح";
+
+// ═══════════════════════════════════════════════════════
+// 3️⃣ تهيئة الخريطة (OpenStreetMap)
+// ═══════════════════════════════════════════════════════
+const map = L.map('map').setView([15.3694, 44.1910], 13); // صنعاء افتراضياً
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 19
+}).addTo(map);
+
+// أيقونة مخصصة لموقعنا
+const myIcon = L.divIcon({
+    html: '<div style="font-size:30px; text-align:center;">📍</div>',
+    iconSize: [30, 30],
+    iconAnchor: [15, 30],
+    className: ''
+});
+
+let myMarker = null;
+let accuracyCircle = null;
+
+// ═══════════════════════════════════════════════════════
+// 4️⃣ إرسال الموقع إلى Back4App
+// ═══════════════════════════════════════════════════════
+async function sendToBackend(lat, lng, accuracy) {
+    try {
+        const response = await fetch(`${SERVER}/classes/Location`, {
+            method: "POST",
+            headers: HEADERS,
+            body: JSON.stringify({
+                deviceId: DEVICE_ID,
+                deviceName: DEVICE_NAME,
+                latitude: lat,
+                longitude: lng,
+                accuracy: accuracy,
+                timestamp: Date.now()
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.text();
+            throw new Error(`HTTP ${response.status}: ${err}`);
+        }
+
+        const result = await response.json();
+        console.log("✅ أُرسل:", result);
+        incrementCounter();
+        return true;
+    } catch (err) {
+        console.error("❌ خطأ:", err);
+        showStatus("offline", "❌ فشل الإرسال");
+        return false;
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+// 5️⃣ عداد السجلات
+// ═══════════════════════════════════════════════════════
+let counter = parseInt(localStorage.getItem("count") || "0");
+const counterEl = document.getElementById("counter");
+counterEl.textContent = `سجلات: ${counter}`;
+
+function incrementCounter() {
+    counter++;
+    localStorage.setItem("count", counter);
+    counterEl.textContent = `سجلات: ${counter}`;
+}
+
+// ═══════════════════════════════════════════════════════
+// 6️⃣ عرض الحالة
+// ═══════════════════════════════════════════════════════
+function showStatus(type, text) {
+    const el = document.getElementById("status");
+    el.className = `status ${type}`;
+    el.textContent = text;
+}
+
+function showInfo(text) {
+    document.getElementById("info").textContent = text;
+}
+
+// ═══════════════════════════════════════════════════════
+// 7️⃣ عرض الموقع على الخريطة
+// ═══════════════════════════════════════════════════════
+function updateMap(lat, lng, accuracy) {
+    const pos = [lat, lng];
+
+    if (!myMarker) {
+        myMarker = L.marker(pos, { icon: myIcon }).addTo(map);
+        myMarker.bindPopup(`<b>موقعي</b><br>دقة: ${Math.round(accuracy)}م`);
+        map.setView(pos, 16);
+    } else {
+        myMarker.setLatLng(pos);
+    }
+
+    // دائرة الدقة
+    if (accuracyCircle) map.removeLayer(accuracyCircle);
+    accuracyCircle = L.circle(pos, {
+        radius: accuracy,
+        color: '#3b82f6',
+        fillColor: '#3b82f6',
+        fillOpacity: 0.15,
+        weight: 1
+    }).addTo(map);
+}
+
+// ═══════════════════════════════════════════════════════
+// 8️⃣ مراقبة الموقع
+// ═══════════════════════════════════════════════════════
+let watchId = null;
+let lastSent = { lat: 0, lng: 0, time: 0 };
+const MIN_DISTANCE = 30;   // متر
+const MIN_INTERVAL = 60000; // دقيقة
+
+function haversine(lat1, lng1, lat2, lng2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 +
+              Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+              Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function handlePosition(position) {
+    const { latitude, longitude, accuracy } = position.coords;
+
+    updateMap(latitude, longitude, accuracy);
+    showInfo(`📍 ${latitude.toFixed(5)}, ${longitude.toFixed(5)} | دقة: ${Math.round(accuracy)}م`);
+
+    // فلترة: لا ترسل إلا عند الحركة أو مرور وقت
+    const distance = haversine(lastSent.lat, lastSent.lng, latitude, longitude);
+    const elapsed = Date.now() - lastSent.time;
+
+    if (distance > MIN_DISTANCE || elapsed > MIN_INTERVAL) {
+        sendToBackend(latitude, longitude, accuracy);
+        lastSent = { lat: latitude, lng: longitude, time: Date.now() };
+    } else {
+        showInfo(`⏸️ لم تتحرك كثيراً (${Math.round(distance)}م)`);
+    }
+}
+
+function handleError(err) {
+    const messages = {
+        1: "❌ رفضت الوصول للموقع",
+        2: "❌ الموقع غير متاح",
+        3: "❌ انتهت مهلة الطلب"
+    };
+    showStatus("offline", messages[err.code] || "خطأ غير معروف");
+    stopTracking();
+}
+
+function startTracking() {
+    if (!navigator.geolocation) {
+        alert("المتصفح لا يدعم تحديد الموقع");
+        return;
+    }
+
+    showStatus("waiting", "🟡 جاري التحديد...");
+
+    watchId = navigator.geolocation.watchPosition(
+        handlePosition,
+        handleError,
+        {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 0
+        }
+    );
+
+    document.getElementById("startBtn").disabled = true;
+    document.getElementById("stopBtn").disabled = false;
+    showStatus("online", "🟢 التتبع نشط");
+}
+
+function stopTracking() {
+    if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+    }
+    document.getElementById("startBtn").disabled = false;
+    document.getElementById("stopBtn").disabled = true;
+    showStatus("offline", "⚫ متوقف");
+}
+
+// ═══════════════════════════════════════════════════════
+// 9️⃣ أحداث الأزرار
+// ═══════════════════════════════════════════════════════
+document.getElementById("startBtn").onclick = startTracking;
+document.getElementById("stopBtn").onclick = stopTracking;
+
+document.getElementById("centerBtn").onclick = () => {
+    if (myMarker) {
+        map.setView(myMarker.getLatLng(), 17);
+        myMarker.openPopup();
+    } else {
+        showInfo("لا يوجد موقع بعد");
+    }
+};
+
+// ═══════════════════════════════════════════════════════
+// 🔟 تشغيل تلقائي إذا كانت الصفحة مفعّلة سابقاً
+// ═══════════════════════════════════════════════════════
+window.addEventListener("beforeunload", () => {
+    if (watchId !== null) stopTracking();
+});
+
+showInfo(`معرّف الجهاز: ${DEVICE_ID}`);
+</script>
+
+</body>
+</html>
