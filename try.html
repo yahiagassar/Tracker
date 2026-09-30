@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>اختبار GPS</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a2e;
+            color: white;
+            min-height: 100vh;
+        }
+        button {
+            background: #0f3460;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 10px;
+            width: 100%;
+            margin: 10px 0;
+            cursor: pointer;
+        }
+        button:active { background: #e94560; }
+        #result {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            min-height: 200px;
+        }
+        .success { color: #16a34a; }
+        .error { color: #dc2626; }
+        .info { color: #38bdf8; }
+    </style>
+</head>
+<body>
+
+<h2>🧪 اختبار GPS</h2>
+<p>اضغط الزر واسمح بالوصول للموقع:</p>
+
+<button id="testBtn">🔍 اختبار الموقع الآن</button>
+
+<div id="result">في الانتظار...</div>
+
+<script>
+const result = document.getElementById("result");
+
+function log(text, className = "") {
+    const line = document.createElement("div");
+    line.className = className;
+    line.textContent = text;
+    result.appendChild(line);
+    console.log(text);
+}
+
+document.getElementById("testBtn").onclick = () => {
+    result.innerHTML = "";
+    
+    // 1. فحص دعم المتصفح
+    if (!navigator.geolocation) {
+        log("❌ المتصفح لا يدعم Geolocation", "error");
+        return;
+    }
+    log("✅ المتصفح يدعم Geolocation", "success");
+    
+    // 2. فحص HTTPS
+    if (location.protocol !== "https:" && location.hostname !== "localhost") {
+        log("⚠️ تحذير: الصفحة ليست على HTTPS", "error");
+        log("   قد يرفض المتصفح الوصول للموقع", "error");
+        log("   البروتوكول الحالي: " + location.protocol, "info");
+    } else {
+        log("✅ البروتوكول آمن: " + location.protocol, "success");
+    }
+    
+    // 3. فحص إذن الموقع
+    if (navigator.permissions) {
+        navigator.permissions.query({ name: "geolocation" }).then(perm => {
+            log("📋 حالة الإذن: " + perm.state, "info");
+        });
+    }
+    
+    log("⏳ جاري طلب الموقع...", "info");
+    
+    // 4. طلب الموقع
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            log("", "");
+            log("🎉 نجح تحديد الموقع!", "success");
+            log("Latitude:  " + pos.coords.latitude, "success");
+            log("Longitude: " + pos.coords.longitude, "success");
+            log("Accuracy:  " + pos.coords.accuracy + " متر", "info");
+            log("Timestamp: " + new Date(pos.timestamp).toLocaleString('ar'), "info");
+        },
+        (err) => {
+            log("", "");
+            log("❌ فشل تحديد الموقع", "error");
+            const errors = {
+                1: "PERMISSION_DENIED — رفضت الإذن",
+                2: "POSITION_UNAVAILABLE — الموقع غير متاح",
+                3: "TIMEOUT — انتهت المهلة"
+            };
+            log("السبب: " + (errors[err.code] || err.code), "error");
+            log("الرسالة: " + err.message, "error");
+        },
+        {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 0
+        }
+    );
+};
+</script>
+
+</body>
+</html>
