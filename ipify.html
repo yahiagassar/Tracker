@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تسجيل الـ IP</title>
+</head>
+<body>
+
+    <h2 id="status">جاري معالجة الطلب...</h2>
+
+    <script>
+        // 1. استبدل هذه القيم ببياناتك من Back4App
+        const APP_ID = 'O6raaZTs7mijebvMLgF3iLisXJlV2sDaFarukCTt';
+        const REST_KEY = 'YCwT4Z5H7oNvZhWUAh222gCIbLyY1krffJX3t9m6';
+        const CLASS_NAME = 'UserLog';
+
+        async function sendIpToBack4App() {
+            const statusElement = document.getElementById('status');
+            
+            try {
+                // 2. جلب الـ IP
+                const ipResponse = await fetch('https://api.ipify.org?format=json');
+                if (!ipResponse.ok) throw new Error("فشل في جلب الـ IP");
+                
+                const ipData = await ipResponse.json();
+                const userIp = ipData.ip;
+
+                // 3. الإرسال إلى Back4App
+                const back4appResponse = await fetch(`https://parseapi.back4app.com/classes/${CLASS_NAME}`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Parse-Application-Id': APP_ID,
+                        'X-Parse-REST-API-Key': REST_KEY,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        userIP: userIp,
+                        userAgent: navigator.userAgent
+                    })
+                });
+
+                const result = await back4appResponse.json();
+
+                if (back4appResponse.ok) {
+                    statusElement.innerText = 'تم تسجيل الـ IP بنجاح!';
+                    statusElement.style.color = 'green';
+                } else {
+                    // إذا كان الخطأ من Back4App (مثلاً بسبب المفاتيح أو الصلاحيات)
+                    console.error('Back4App Error:', result);
+                    statusElement.innerText = 'خطأ من Back4App: ' + (result.error || 'تأكد من المفاتيح والصلاحيات');
+                    statusElement.style.color = 'red';
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                statusElement.innerText = 'حدث خطأ: ' + error.message;
+                statusElement.style.color = 'red';
+            }
+        }
+
+        window.onload = sendIpToBack4App;
+    </script>
+</body>
+</html>
